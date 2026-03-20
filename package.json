@@ -1,0 +1,16 @@
+{
+  "name": "dac-presentation-server",
+  "version": "1.0.0",
+  "description": "Serveur local pour la présentation Diagram as Code — contourne les restrictions iframe file:// de Firefox",
+  "scripts": {
+    "build": "node build-single-assets.js",
+    "build:likec4-single-assets": "node build-single-assets.js",
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "likec4": "^1.52.0",
+    "qrcode": "^1.5.4"
+  }
+}

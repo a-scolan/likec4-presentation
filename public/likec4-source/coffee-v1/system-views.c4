@@ -1,0 +1,61 @@
+/**
+ * Coffee V1 — Vues C1/C2 + scénario comptoir
+ */
+
+views {
+  view index extends c1_context {
+    title 'Coffee V1 - Vue d ensemble'
+  }
+}
+
+views 'C1' {
+  view c1_context {
+    title 'Coffee V1 - Contexte'
+    description '''
+      Le festivalier commande au comptoir.
+      Le barista prépare et remet la boisson au stand.
+    '''
+
+    include festivalier, barista, alefestCoffee
+
+    autoLayout TopBottom
+  }
+}
+
+views 'C2' {
+  view c2_containers of alefestCoffee {
+    title 'Coffee V1 - Containers'
+    description '''
+      Front comptoir + écran barista, deux services backend,
+      RabbitMQ et PostgreSQL.
+    '''
+
+    include festivalier, barista, alefestCoffee.*
+    include -> alefestCoffee
+    include alefestCoffee ->
+    include festivalier -> alefestCoffee.counterApp
+
+  }
+}
+
+views 'Use Cases' {
+  dynamic view order_counter_flow {
+    title 'Coffee V1 - Commande au comptoir'
+    description '''
+      Flux V1 : commande sur place, attente au comptoir.
+    '''
+
+    festivalier -> alefestCoffee.counterApp 'Commande au comptoir'
+    alefestCoffee.counterApp -> alefestCoffee.orderService 'POST /orders'
+    alefestCoffee.orderService -> alefestCoffee.database 'INSERT order'
+    alefestCoffee.orderService -> alefestCoffee.eventBus 'order.placed'
+    alefestCoffee.eventBus -> alefestCoffee.preparationService 'order.placed'
+    alefestCoffee.preparationService -> alefestCoffee.baristaScreen 'WebSocket push'
+    alefestCoffee.baristaScreen -> barista 'Affiche la file'
+    barista -> alefestCoffee.preparationService 'PATCH status preparing/ready'
+    alefestCoffee.preparationService -> alefestCoffee.eventBus 'order.preparing/order.ready'
+    barista -> festivalier 'Remet le café'
+
+	include alefestCoffee
+  }
+}

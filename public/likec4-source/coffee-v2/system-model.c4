@@ -1,0 +1,206 @@
+/**
+ * Coffee V2 — Le Café Mobile
+ * Commande mobile via le système festival, fallback comptoir,
+ * notifications push et orchestration event-driven.
+ */
+
+model {
+  festivalier = Actor_Person 'Festivalier' {
+    style {
+      icon @/lucide-static/circle-user-round.svg
+    }
+
+    description '''
+      Utilise application mobile du festival pour commander à distance
+      ou passe exceptionnellement au comptoir.
+    '''
+  }
+
+  barista = Actor_Staff 'Barista' {
+    style {
+      icon @/lucide-static/badge.svg
+    }
+
+    description '''
+      Prépare les boissons et fait évoluer les statuts de commande.
+    '''
+  }
+
+  festivalSystem = System_External 'Système Festival' {
+    style {
+      icon @/lucide-static/calendar.svg
+    }
+
+    description '''
+      Écosystème digital du festival (hors périmètre AleFest Café).
+      Fournit application mobile et backend partenaire.
+    '''
+
+    festivalApp = Container_MobileApp 'Application Festival' {
+      technology 'React Native, Expo'
+      style {
+        icon @/lucide-static/smartphone.svg
+      }
+
+      description '''
+        Application mobile officielle utilisée par les festivaliers.
+      '''
+    }
+
+    festivalService = Container_Api 'Service Festival' {
+      technology 'Node.js, Express'
+      style {
+        icon @/lucide-static/server.svg
+      }
+
+      description '''
+        Backend partenaire qui expose les APIs festival.
+      '''
+    }
+
+    festivalApp -[calls]-> festivalService 'API mobile festival' {
+      technology 'HTTPS'
+    }
+  }
+
+  alefestCoffee = System_New 'AleFest Café' {
+    style {
+      icon @/lucide-static/coffee.svg
+    }
+
+    description '''
+      Système du stand café.
+      V2 : ouverture vers le système festival, notifications dédiées.
+    '''
+
+    counterApp = Container_Spa 'Application Comptoir' {
+      technology 'React, TypeScript, Vite'
+      style {
+        icon @/lucide-static/app-window.svg
+      }
+
+      description '''
+        Parcours comptoir conservé comme fallback.
+      '''
+    }
+
+    baristaScreen = Container_Spa 'Écran Barista' {
+      technology 'React, TypeScript, WebSocket'
+      style {
+        icon @/lucide-static/monitor.svg
+      }
+
+      description '''
+        File de préparation en temps réel pour les baristas.
+      '''
+    }
+
+    orderService = Container_Api 'Service de Commandes' {
+      technology 'Node.js, Express, RabbitMQ client'
+      style {
+        icon @/lucide-static/square-terminal.svg
+      }
+
+      description '''
+        Reçoit les commandes festival/comptoir, persiste et publie order.placed.
+      '''
+    }
+
+    preparationService = Container_Api 'Service Préparation' {
+      technology 'Node.js, Express, WebSocket, RabbitMQ client'
+      style {
+        icon @/lucide-static/workflow.svg
+      }
+
+      description '''
+        Consomme order.placed, pilote la file barista et publie les changements de statut.
+      '''
+    }
+
+    notificationService = Container_Api 'Service Notification' {
+      technology 'Node.js, Firebase Admin SDK, RabbitMQ client'
+      style {
+        icon @/lucide-static/bell-ring.svg
+      }
+
+      description '''
+        Consomme les événements de statut et envoie les notifications push.
+      '''
+    }
+
+    eventBus = Container_Queue 'RabbitMQ' {
+      technology 'RabbitMQ 3.12'
+      style {
+        icon @/lucide-static/rabbit.svg
+      }
+
+      description '''
+        Bus d'événements entre services du stand café.
+      '''
+    }
+
+    database = Container_Database 'PostgreSQL' {
+      technology 'PostgreSQL 16'
+      style {
+        icon tech:postgresql
+      }
+
+      description '''
+        Persistance des commandes, statuts et données techniques utiles aux notifications.
+      '''
+    }
+
+    counterApp -[calls]-> orderService 'POST /orders - commande comptoir' {
+      technology 'HTTPS'
+    }
+    counterApp -[calls]-> orderService 'GET /orders/:id - statut' {
+      technology 'HTTPS'
+    }
+
+    baristaScreen -[calls]-> preparationService 'WebSocket - file en temps réel' {
+      technology 'WebSocket'
+    }
+    baristaScreen -[calls]-> preparationService 'PATCH /queue/:id - mise à jour statut' {
+      technology 'HTTPS'
+    }
+
+    orderService -[async]-> eventBus 'Publie order.placed' {
+      technology 'AMQP'
+    }
+    eventBus -[async]-> preparationService 'Livre order.placed' {
+      technology 'AMQP'
+    }
+    preparationService -[async]-> eventBus 'Publie order.preparing / order.ready' {
+      technology 'AMQP'
+    }
+    eventBus -[async]-> notificationService 'Livre order.preparing / order.ready' {
+      technology 'AMQP'
+    }
+
+    orderService -[reads]-> database 'Lire commandes/menu' {
+      technology 'PostgreSQL'
+    }
+    orderService -[writes]-> database 'Créer et mettre à jour commande' {
+      technology 'PostgreSQL'
+    }
+
+    preparationService -[reads]-> database 'Lire file en cours' {
+      technology 'PostgreSQL'
+    }
+    preparationService -[writes]-> database 'Mettre à jour statut' {
+      technology 'PostgreSQL'
+    }
+
+    notificationService -[uses]-> festivalSystem.festivalApp 'Envoie push notification' {
+      technology 'Firebase Cloud Messaging'
+    }
+  }
+
+  festivalier -[uses]-> festivalSystem.festivalApp 'Commande mobile et suivi'
+  festivalier -[uses]-> alefestCoffee.counterApp 'Commande au comptoir (fallback)'
+  barista -[uses]-> alefestCoffee.baristaScreen 'Prépare et remet la boisson'
+
+  festivalSystem.festivalService -[uses]-> alefestCoffee.orderService 'Intégration des commandes partenaire' {
+    technology 'HTTPS'
+  }
+}

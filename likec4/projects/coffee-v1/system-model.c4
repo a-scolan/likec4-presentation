@@ -1,0 +1,145 @@
+/**
+ * Coffee V1 — Le Comptoir
+ * Commande et attente sur place, avec coordination interne par événements.
+ */
+
+model {
+  festivalier = Actor_Person 'Festivalier' {
+    style {
+      icon @/lucide-static/circle-user-round.svg
+    }
+
+    description '''
+      Client du stand café.
+      Passe commande au comptoir et attend sur place.
+    '''
+  }
+
+  barista = Actor_Staff 'Barista' {
+    style {
+      icon @/lucide-static/badge.svg
+    }
+
+    description '''
+      Prépare les boissons et fait évoluer les statuts de commande.
+    '''
+  }
+
+  alefestCoffee = System_New 'AleFest Café' {
+    style {
+      icon @/lucide-static/coffee.svg
+    }
+
+    description '''
+      Système interne du stand café.
+      V1 : expérience comptoir, architecture déjà découplée en interne.
+    '''
+
+    counterApp = Container_Spa 'Application Comptoir' {
+      technology 'React, TypeScript, Vite'
+      style {
+        icon @/lucide-static/app-window.svg
+      }
+
+      description '''
+        Interface comptoir (staff/self-service) pour créer les commandes.
+      '''
+    }
+
+    baristaScreen = Container_Spa 'Écran Barista' {
+      technology 'React, TypeScript, WebSocket'
+      style {
+        icon @/lucide-static/monitor.svg
+      }
+
+      description '''
+        Écran de file de préparation en temps réel.
+      '''
+    }
+	
+    orderService = Container_Api 'Service de Commandes' {
+      technology 'Node.js, Express, RabbitMQ client'
+      style {
+        icon @/lucide-static/square-terminal.svg
+      }
+
+      description '''
+        Reçoit les commandes, persiste et publie order.placed.
+      '''
+    }
+
+    preparationService = Container_Api 'Service Préparation' {
+      technology 'Node.js, Express, WebSocket, RabbitMQ client'
+      style {
+        icon @/lucide-static/workflow.svg
+      }
+
+      description '''
+        Consomme order.placed, gère la file, publie order.preparing et order.ready.
+      '''
+    }
+
+    eventBus = Container_Queue 'RabbitMQ' {
+      technology 'RabbitMQ 3.12'
+      style {
+        icon @/lucide-static/rabbit.svg
+      }
+
+      description '''
+        Bus d'événements interne entre services.
+      '''
+    }
+
+    database = Container_Database 'PostgreSQL' {
+      technology 'PostgreSQL 16'
+      style {
+        icon tech:postgresql
+      }
+
+      description '''
+        Persistance des commandes et des statuts.
+      '''
+    }
+
+    counterApp -[calls]-> orderService 'POST /orders - créer commande' {
+      technology 'HTTPS'
+    }
+    counterApp -[calls]-> orderService 'GET /orders/:id - consulter statut' {
+      technology 'HTTPS'
+    }
+
+    baristaScreen -[calls]-> preparationService 'WebSocket - file en temps réel' {
+      technology 'WebSocket'
+    }
+    baristaScreen -[calls]-> preparationService 'PATCH /queue/:id - mise à jour statut' {
+      technology 'HTTPS'
+    }
+
+    orderService -[async]-> eventBus 'Publie order.placed' {
+      technology 'AMQP'
+    }
+    eventBus -[async]-> preparationService 'Livre order.placed' {
+      technology 'AMQP'
+    }
+    preparationService -[async]-> eventBus 'Publie order.preparing / order.ready' {
+      technology 'AMQP'
+    }
+
+    orderService -[reads]-> database 'Lire commandes/menu' {
+      technology 'PostgreSQL'
+    }
+    orderService -[writes]-> database 'Créer et mettre à jour commande' {
+      technology 'PostgreSQL'
+    }
+
+    preparationService -[reads]-> database 'Lire file en cours' {
+      technology 'PostgreSQL'
+    }
+    preparationService -[writes]-> database 'Mettre à jour statut' {
+      technology 'PostgreSQL'
+    }
+  }
+
+  festivalier -[uses]-> alefestCoffee.counterApp 'Passe sa commande au comptoir'
+  barista -[uses]-> alefestCoffee.baristaScreen 'Prépare et suit les commandes'
+}

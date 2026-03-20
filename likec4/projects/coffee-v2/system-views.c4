@@ -1,0 +1,92 @@
+/**
+ * Coffee V2 — Vues C1/C2 + scénarios mobile et fallback comptoir
+ */
+
+views {
+  view index extends c1_context {
+    title 'Coffee V2 - Vue d ensemble'
+  }
+}
+
+views 'C1' {
+  view c1_context {
+    title 'Coffee V2 - Contexte'
+    description '''
+      Le festivalier commande via le système festival ou au comptoir.
+      Le barista prépare sur site. Le système festival est explicite.
+    '''
+
+    include festivalier, barista, festivalSystem, alefestCoffee
+
+    autoLayout TopBottom
+  }
+}
+
+views 'C2' {
+  view c2_containers of alefestCoffee {
+    title 'Coffee V2 - Containers'
+    description '''
+      Intégration partenaire + Notification Service.
+      RabbitMQ transporte les événements order.placed/order.preparing/order.ready.
+    '''
+
+    include festivalier, barista, festivalSystem, festivalSystem.*, alefestCoffee.*
+    include -> alefestCoffee
+    include alefestCoffee ->
+
+    autoLayout TopBottom
+
+    style alefestCoffee.eventBus {
+      color amber
+    }
+  }
+}
+
+views 'Use Cases' {
+  dynamic view order_mobile_flow {
+    title 'Coffee V2 - Commande mobile asynchrone'
+    description '''
+      Le festivalier commande, repart au concert et revient après notification.
+    '''
+
+    festivalier -> festivalSystem.festivalApp 'Commande un flat white'
+    festivalSystem.festivalApp -> festivalSystem.festivalService 'POST /orders'
+    festivalSystem.festivalService -> alefestCoffee.orderService 'POST /orders'
+    alefestCoffee.orderService -> alefestCoffee.database 'INSERT order'
+    alefestCoffee.orderService -> alefestCoffee.eventBus 'order.placed'
+    festivalSystem.festivalService -> festivalSystem.festivalApp 'Confirme orderId'
+    festivalSystem.festivalApp -> festivalier 'Commande confirmée'
+
+    alefestCoffee.eventBus -> alefestCoffee.preparationService 'order.placed'
+    alefestCoffee.preparationService -> alefestCoffee.baristaScreen 'WebSocket push file'
+    alefestCoffee.baristaScreen -> barista 'Affiche commande'
+    barista -> alefestCoffee.preparationService 'PATCH preparing'
+    alefestCoffee.preparationService -> alefestCoffee.eventBus 'order.preparing'
+
+    barista -> alefestCoffee.preparationService 'PATCH ready'
+    alefestCoffee.preparationService -> alefestCoffee.eventBus 'order.ready'
+    alefestCoffee.preparationService -> alefestCoffee.database 'UPDATE order SET status = "ready"'
+    alefestCoffee.eventBus -> alefestCoffee.notificationService 'order.ready'
+    alefestCoffee.notificationService -> festivalSystem.festivalApp 'Push : votre café est prêt'
+    festivalSystem.festivalApp -> festivalier 'Notification reçue'
+    festivalier -> barista 'Récupère sa boisson'
+
+	include festivalSystem, alefestCoffee
+  }
+
+  dynamic view order_counter_flow {
+    title 'Coffee V2 - Fallback comptoir'
+    description '''
+      Parcours de secours local conservé en V2.
+    '''
+
+    festivalier -> alefestCoffee.counterApp 'Commande au comptoir'
+    alefestCoffee.counterApp -> alefestCoffee.orderService 'POST /orders'
+    alefestCoffee.orderService -> alefestCoffee.eventBus 'order.placed'
+    alefestCoffee.eventBus -> alefestCoffee.preparationService 'order.placed'
+    alefestCoffee.preparationService -> alefestCoffee.baristaScreen 'WebSocket push'
+    alefestCoffee.baristaScreen -> barista 'Affiche dans la file'
+	
+	include alefestCoffee
+  }
+}
